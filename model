@@ -1,0 +1,125 @@
+import pandas as pd
+from transformers import T5Tokenizer, T5ForConditionalGeneration
+from rouge_score import rouge_scorer
+import jsonlines
+def load_jsonl(file_path):
+    data = []
+    with jsonlines.open(r"C:/Users/diksh/Downloads/Quora-QuAD.jsonl") as reader:
+        for obj in reader:
+            data.append(obj)
+    return data
+file_path = r"C:/Users/diksh/Downloads/Quora-QuAD.jsonl"
+df = load_jsonl(file_path)
+print(type(df))
+df = pd.DataFrame(df)
+print(df.head())
+print(type(df))
+print(df.head())
+print(df.columns)
+import re
+def clean_text(text):
+    if isinstance(text, str):
+        text = text.lower()
+        text = re.sub(r'\s+', ' ', text)  # Remove extra spaces
+        text = re.sub(r'[^\w\s]', '', text)  # Remove punctuation
+        return text
+    return text
+
+df['question'] = df['question'].apply(clean_text)
+df['question'] = df['question'].apply(clean_text)
+
+print(df.isnull().sum())
+from nltk.tokenize import word_tokenize
+df['tokens_q'] = df['question'].apply(word_tokenize)
+df['tokens_q'] = df['question'].apply(word_tokenize)
+from nltk.corpus import stopwords
+
+stop_words = set(stopwords.words('english'))
+
+def remove_stop_words(tokens):
+    return [word for word in tokens if word not in stop_words]
+
+df['tokens_q'] = df['tokens_q'].apply(remove_stop_words)
+df['tokens_q'] = df['tokens_q'].apply(remove_stop_words)
+
+from nltk.stem import WordNetLemmatizer
+
+lemmatizer = WordNetLemmatizer()
+
+def lemmatize_tokens(tokens):
+    return [lemmatizer.lemmatize(token) for token in tokens]
+
+df['tokens_q'] = df['tokens_q'].apply(lemmatize_tokens)
+df['tokens_q'] = df['tokens_q'].apply(lemmatize_tokens)
+from sklearn.model_selection import train_test_split
+
+X = df[['question']]
+y = df['answer']
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+print(f"Training data size: {len(X_train)}")
+print(f"Testing data size: {len(X_test)}")
+from transformers import T5Tokenizer, T5ForConditionalGeneration
+from transformers import Trainer, TrainingArguments
+
+tokenizer = T5Tokenizer.from_pretrained('t5-small')
+model = T5ForConditionalGeneration.from_pretrained('t5-small')
+
+def preprocess_function(examples):
+    inputs = examples['question']
+    targets = examples['answer'] if 'answer' in examples else inputs  # In case of missing answers
+    model_inputs = tokenizer(inputs, max_length=128, truncation=True)
+
+    with tokenizer.as_target_tokenizer():
+        labels = tokenizer(targets, max_length=128, truncation=True)
+
+    model_inputs['labels'] = labels['input_ids']
+    return model_inputs
+train_data = X_train.to_dict('list')
+test_data = X_test.to_dict('list')
+print(train_data.keys())
+print(test_data.keys())
+train_encodings = preprocess_function(train_data)
+test_encodings = preprocess_function(test_data)
+import torch
+
+class CustomDataset(torch.utils.data.Dataset):
+    def __init__(self, encodings, labels=None):
+        self.encodings = encodings
+        self.labels = labels
+
+    def __getitem__(self, idx):
+        item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
+        if self.labels is not None:
+            item['labels'] = torch.tensor(self.labels[idx])
+        return item
+
+    def __len__(self):
+        return len(self.encodings['input_ids'])
+
+train_dataset = CustomDataset(train_encodings, y_train.tolist())
+test_dataset = CustomDataset(test_encodings, y_test.tolist())
+
+from transformers import T5ForConditionalGeneration, Trainer, TrainingArguments
+
+model = T5ForConditionalGeneration.from_pretrained('t5-small')
+
+training_args = TrainingArguments(
+    output_dir='./results',
+    num_train_epochs=3,
+    per_device_train_batch_size=8,
+    per_device_eval_batch_size=8,
+    warmup_steps=500,
+    weight_decay=0.01,
+    logging_dir='./logs',
+)
+
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=train_dataset,
+    eval_dataset=test_dataset,
+)
+
+trainer.train()
+
